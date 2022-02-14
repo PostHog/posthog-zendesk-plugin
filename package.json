@@ -4,8 +4,8 @@
   "description": "Send Tickets Data from Zendesk to PostHog and updates profiles on Zendesk",
   "main": "index.js",
   "authors": "Sandeep Guptan & Himanshu Garg",
+  "license": "MIT",
   "dependencies": {
     "node-fetch": "^3.2.0"
-  },
-  "license": "MIT"
+  }
 }
