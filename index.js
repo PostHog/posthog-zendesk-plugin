@@ -124,15 +124,16 @@ async function fetchAllTickets(global, storage, cache) {
     }
 
     ///saves storage space
-    const customerRecordExists = await storage.get(allTickets[0].id);
-
-    if (!customerRecordExists) {
-      await storage.set(allTickets[0].id, true);
-    } else {
-      break;
-    }
 
     for (let ticket of allTickets) {
+      const customerRecordExists = await storage.get(ticket.id);
+
+      if (!customerRecordExists) {
+        await storage.set(ticket.id, true);
+      } else {
+        break;
+      }
+
       const emailId = await fetchUserIdentity(
         ticket.requester_id,
         global,
