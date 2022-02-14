@@ -1,0 +1,52 @@
+{
+  "name": "posthog-zendesk-plugin",
+  "url": "https://github.com/iguvana/posthog-zendesk-plugin",
+  "description": "This plugin can be used to integrate zendesk with posthog",
+  "main": "index.js",
+  "posthogVersion": ">= 1.25.0",
+  "config": [
+    {
+      "markdown": "posthog-zendesk-plugin"
+    },
+    {
+      "key": "hostName",
+      "name": "Host name",
+      "type": "string",
+      "default": "{companyName}",
+      "required": true,
+      "hint": "Generally, Your Zendesk URL has two parts: a subdomain name you chose when you set up your account, followed by zendesk.com (for example: mycompany.zendesk.com). Please share the subdomain name with us so we can set up your account."
+    },
+    {
+      "key": "userEmail",
+      "name": "Host Email",
+      "type": "string",
+      "default": "email@admin.com",
+      "required": true,
+      "hint": "Enter the email for admin of your Zendesk account."
+    },
+    {
+      "key": "zendeskApiKey",
+      "name": "API token",
+      "type": "string",
+      "default": "{your token}",
+      "required": true,
+      "hint": "Enter your Zendesk API Token"
+    },
+    {
+      "key": "triggeringEvents",
+      "hint": "A comma-separated list of PostHog events you want to trigger Profile Updation in Zendesk. For example, if you want to trigger Zendesk Profile Updation on 'pageview' and 'track' events, you can set this to 'pageview,track'. Make sure you have these events enabled in your Zendesk account.",
+      "name": "Triggering events",
+      "type": "string",
+      "default": "{Sample keys}",
+      "required": true
+    },
+    {
+      "key": "ignoredEmails",
+      "hint": "A comma-separated list of email domains to ignore and not update for in Zendesk.",
+      "name": "Email domains to skip",
+      "type": "string",
+      "default": "",
+      "required": false
+    }
+  ]
+}
