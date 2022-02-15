@@ -32,36 +32,23 @@ export async function setupPlugin({ config, global, cache }) {
   }
 
   global.triggeringEvents = (config.triggeringEvents || "")
-  .split(",")
-  .map(v => v.trim());
+    .split(",")
+    .map((v) => v.trim());
 
   global.emailDomainsToIgnore = (config.ignoredEmails || "")
-  .split(",")
-  .map(v => v.trim());
+    .split(",")
+    .map((v) => v.trim());
 }
 
-
-export const jobs = { 
-  async pushUserDataToZendesk: ( email, eventName, sent_at, global, storage) => {
-    const userId = await storage.get(email);
-
-    if (userId) {
-      const updatedHeaders = global.defaultHeaders;
-      updatedHeaders.body = JSON.stringify({
-        user: {
-          user_fields: { [eventName]: `${sent_at}` },
-        },
-      });
-
-      const retryResponse = await fetchWithRetry(
-        `${global.fetchUserUrl}/${userId}`,
-        updatedHeaders,
-        "PUT"
-      );
-      await retryResponse.json();
-    }
-  }
-}
+export const jobs = {
+  pushUserDataToZendesk: async (request, meta) => {
+    await fetchWithRetry(
+      `${request.url}/${request.userId}`,
+      request.headers,
+      "PUT"
+    );
+  },
+};
 async function fetchUserIdentity(requesterId, global, storage) {
   const userResult = await fetchWithRetry(
     `${global.fetchUserUrl}/${requesterId}`,
@@ -138,14 +125,33 @@ async function fetchAllTickets(global, storage, cache) {
   }
 }
 
-export async function onEvent(event, { config, global, storage }) {
+export async function onEvent(event, { jobs, config, global, storage }) {
   if (global.triggeringEvents.includes(event.event)) {
     const email = getEmailFromEvent(event);
     if (email) {
       if (global.emailDomainsToIgnore.includes(email.split("@")[1])) {
         return;
       }
-      await jobs.pushUserDataToZendesk(email, event.event, event.time, global, storage).runNow();
+      const userId = await storage.get(email);
+      if (userId) {
+        const url = await global.fetchUserUrl;
+
+        global.defaultHeaders.body = JSON.stringify({
+          user: {
+            user_fields: { [event.event]: `${event.sent_at}` },
+          },
+        });
+
+        let headers = global.defaultHeaders;
+
+        const request = {
+          userId: userId,
+          url: url,
+          headers: headers,
+        };
+
+        await jobs.pushUserDataToZendesk(request).runNow();
+      }
     }
   }
 }
