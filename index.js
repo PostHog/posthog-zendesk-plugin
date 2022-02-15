@@ -1,6 +1,3 @@
-// <TODO: your plugin code here - you can base it on the code below, but you don't have to>
-
-// Plugin method that runs on plugin load
 export async function setupPlugin({ config, global, cache }) {
   console.info(`Setting up the plugin`);
   let baseUrl = `https://${config.hostName}.zendesk.com/`;
@@ -27,12 +24,153 @@ export async function setupPlugin({ config, global, cache }) {
   );
 
   if (!statusOk(authenticationResponse)) {
-    throw new Error(`Unable to access zendesk api's for ${config.hostName}`);
+    throw new Error(`Unable to access ZenDesk API's for ${config.hostName}`);
   } else {
     console.info(
-      `Inetail setup with zendesk for ${config.hostName} successful`
+      `Initial setup with ZenDesk for ${config.hostName} successful`
     );
   }
+
+  global.triggeringEvents = (config.triggeringEvents || "")
+  .split(",")
+  .map(v => v.trim());
+
+  global.emailDomainsToIgnore = (config.ignoredEmails || "")
+  .split(",")
+  .map(v => v.trim());
+}
+
+
+export const jobs = { 
+  async pushUserDataToZendesk: ( email, eventName, sent_at, global, storage) => {
+    const userId = await storage.get(email);
+
+    if (userId) {
+      const updatedHeaders = global.defaultHeaders;
+      updatedHeaders.body = JSON.stringify({
+        user: {
+          user_fields: { [eventName]: `${sent_at}` },
+        },
+      });
+
+      const retryResponse = await fetchWithRetry(
+        `${global.fetchUserUrl}/${userId}`,
+        updatedHeaders,
+        "PUT"
+      );
+      await retryResponse.json();
+    }
+  }
+}
+async function fetchUserIdentity(requesterId, global, storage) {
+  const userResult = await fetchWithRetry(
+    `${global.fetchUserUrl}/${requesterId}`,
+    global.defaultHeaders
+  );
+
+  const user = await userResult.json();
+
+  //   posthog.capture(user.user.email, { $set_once: { zendeskId: user.user.id } });
+  await storage.set(user.user.email, user.user.id);
+  return user.user.email;
+}
+
+async function fetchAllTickets(global, storage, cache) {
+  let allTickets = [null];
+  let index = 1;
+  while (allTickets.length > 0) {
+    const finalUrl = `${global.baseTicketUrl}&page=${index}`;
+
+    const allTicketData = await fetchWithRetry(finalUrl, global.defaultHeaders);
+    index += 1;
+
+    allTickets = await allTicketData.json();
+    allTickets = allTickets.tickets;
+
+    if (allTickets.length === 0) {
+      break;
+    }
+
+    ///saves storage space
+
+    for (let ticket of allTickets) {
+      const customerRecordExists = await storage.get(ticket.id);
+
+      if (!customerRecordExists) {
+        await storage.set(ticket.id, true);
+      } else {
+        break;
+      }
+
+      const emailId = await fetchUserIdentity(
+        ticket.requester_id,
+        global,
+        storage
+      );
+
+      const ticketObjectToSave = {
+        ticketId: ticket.id,
+        created_at: ticket.created_at,
+        updated_at: ticket.updated_at,
+        type: ticket.type,
+        subject: ticket.raw_subject,
+        description: ticket.description,
+        priority: ticket.priority,
+        status: ticket.status,
+        recipient: ticket.recipient,
+        requester_id: ticket.requester_id,
+        submitter_id: ticket.submitter_id,
+        assignee_id: ticket.assignee_id,
+        organization_id: ticket.organization_id,
+        group_id: ticket.group_id,
+        is_public: ticket.is_public,
+        due_at: ticket.due_at,
+        ticket_form_id: ticket.ticket_form_id,
+        brand_id: ticket.brand_id,
+      };
+
+      posthog.capture("zendesk_ticket", {
+        distinct_id: emailId,
+        $set: { zendeskId: ticketObjectToSave.requester_id },
+        ...ticketObjectToSave,
+      });
+    }
+  }
+}
+
+export async function onEvent(event, { config, global, storage }) {
+  if (global.triggeringEvents.includes(event.event)) {
+    const email = getEmailFromEvent(event);
+    if (email) {
+      if (global.emailDomainsToIgnore.includes(email.split("@")[1])) {
+        return;
+      }
+      await jobs.pushUserDataToZendesk(email, event.event, event.time, global, storage).runNow();
+    }
+  }
+}
+
+function getEmailFromEvent(event) {
+  if (isEmail(event.distinct_id)) {
+    return event.distinct_id;
+  } else if (event["$set"] && Object.keys(event["$set"]).includes("email")) {
+    if (isEmail(event["$set"]["email"])) {
+      return event["$set"]["email"];
+    }
+  } else if (
+    event["properties"] &&
+    Object.keys(event["properties"]).includes("email")
+  ) {
+    if (isEmail(event["properties"]["email"])) {
+      return event["properties"]["email"];
+    }
+  }
+
+  return null;
+}
+
+export async function runEveryMinute({ global, storage, cache }) {
+  const allTickets = await fetchAllTickets(global, storage, cache);
 }
 
 function isEmail(email) {
@@ -66,158 +204,4 @@ async function fetchWithRetry(
     );
     return res;
   }
-}
-
-async function pushUserDataToZendesk(
-  email,
-  eventName,
-  sent_at,
-  global,
-  storage
-) {
-  const userId = await storage.get(email);
-
-  if (userId) {
-    const updatedHeaders = global.defaultHeaders;
-    updatedHeaders.body = JSON.stringify({
-      user: {
-        user_fields: { [eventName]: `${sent_at}` },
-      },
-    });
-
-    const retryResponse = await fetchWithRetry(
-      `${global.fetchUserUrl}/${userId}`,
-      updatedHeaders,
-      "PUT"
-    );
-    await retryResponse.json();
-  }
-}
-
-async function fetchUserIdentity(requesterId, global, storage) {
-  const userResult = await fetchWithRetry(
-    `${global.fetchUserUrl}/${requesterId}`,
-    global.defaultHeaders
-  );
-
-  const user = await userResult.json();
-
-  //   posthog.capture(user.user.email, { $set_once: { zendeskId: user.user.id } });
-  await storage.set(user.user.email, user.user.id);
-  return user.user.email;
-}
-
-async function fetchAllTickets(global, storage, cache) {
-  let allTickets = [null];
-  index = 1;
-  while (allTickets.length > 0) {
-    const finalUrl = `${global.baseTicketUrl}&page=${index}`;
-
-    const allTicketData = await fetchWithRetry(finalUrl, global.defaultHeaders);
-    index += 1;
-
-    allTickets = await allTicketData.json();
-    allTickets = await allTickets.tickets;
-
-    if (allTickets.length === 0) {
-      break;
-    }
-
-    ///saves storage space
-
-    for (let ticket of allTickets) {
-      const customerRecordExists = await storage.get(ticket.id);
-
-      if (!customerRecordExists) {
-        await storage.set(ticket.id, true);
-      } else {
-        break;
-      }
-
-      const emailId = await fetchUserIdentity(
-        ticket.requester_id,
-        global,
-        storage
-      );
-
-      const ticket_object_to_capture = {
-        ticketId: ticket.id,
-        created_at: ticket.created_at,
-        updated_at: ticket.updated_at,
-        type: ticket.type,
-        subject: ticket.raw_subject,
-        description: ticket.description,
-        priority: ticket.priority,
-        status: ticket.status,
-        recipient: ticket.recipient,
-        requester_id: ticket.requester_id,
-        submitter_id: ticket.submitter_id,
-        assignee_id: ticket.assignee_id,
-        organization_id: ticket.organization_id,
-        group_id: ticket.group_id,
-        is_public: ticket.is_public,
-        due_at: ticket.due_at,
-        ticket_form_id: ticket.ticket_form_id,
-        brand_id: ticket.brand_id,
-      };
-
-      posthog.capture("zendesk_ticket", {
-        distinct_id: emailId,
-        $set: { zendeskId: ticket_object_to_capture.requester_id },
-        ...ticket_object_to_capture,
-      });
-    }
-  }
-}
-
-export async function onEvent(event, { config, global, storage }) {
-  let triggeringEvents = (config.triggeringEvents || "")
-    .split(",")
-    .map(function (value) {
-      return value.trim();
-    });
-  if (triggeringEvents.indexOf(event.event) >= 0) {
-    const email = getEmailFromEvent(event);
-    if (email) {
-      let emailDomainsToIgnore = (config.ignoredEmails || "")
-        .split(",")
-        .map(function (value) {
-          return value.trim();
-        });
-      if (emailDomainsToIgnore.indexOf(email.split("@")[1]) >= 0) {
-        return;
-      }
-      await pushUserDataToZendesk(
-        email,
-        event.event,
-        event["sent_at"],
-        global,
-        storage
-      );
-    }
-  }
-}
-
-function getEmailFromEvent(event) {
-  if (isEmail(event.distinct_id)) {
-    return event.distinct_id;
-  } else if (event["$set"] && Object.keys(event["$set"]).includes("email")) {
-    if (isEmail(event["$set"]["email"])) {
-      return event["$set"]["email"];
-    }
-  } else if (
-    event["properties"] &&
-    Object.keys(event["properties"]).includes("email")
-  ) {
-    if (isEmail(event["properties"]["email"])) {
-      return event["properties"]["email"];
-    }
-  }
-
-  return null;
-}
-
-export async function runEveryMinute({ global, storage, cache }) {
-  const latest_element_so_far = await cache.get("_latest_element_so_far");
-  const allTickets = await fetchAllTickets(global, storage, cache);
 }
