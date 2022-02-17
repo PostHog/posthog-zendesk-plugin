@@ -41,12 +41,24 @@ export async function setupPlugin({ config, global, cache }) {
 }
 
 export const jobs = {
-  pushUserDataToZendesk: async (request, meta) => {
-    await fetchWithRetry(
-      `${request.url}/${request.userId}`,
-      request.headers,
-      "PUT"
-    );
+  pushUserDataToZendesk: async (request, { storage, global, cache }) => {
+    const userId = await storage.get(request.email);
+
+    if (userId) {
+      const url = global.fetchUserUrl;
+
+      global.defaultHeaders.body = JSON.stringify({
+        user: {
+          user_fields: { [request.event.event]: `${request.event.sent_at}` },
+        },
+      });
+
+      const result = await fetchWithRetry(
+        `${url}/${userId}`,
+        global.defaultHeaders,
+        "PUT"
+      );
+    }
   },
 };
 async function fetchUserIdentity(requesterId, global, storage) {
@@ -132,26 +144,12 @@ export async function onEvent(event, { jobs, config, global, storage }) {
       if (global.emailDomainsToIgnore.includes(email.split("@")[1])) {
         return;
       }
-      const userId = await storage.get(email);
-      if (userId) {
-        const url = await global.fetchUserUrl;
 
-        global.defaultHeaders.body = JSON.stringify({
-          user: {
-            user_fields: { [event.event]: `${event.sent_at}` },
-          },
-        });
-
-        let headers = global.defaultHeaders;
-
-        const request = {
-          userId: userId,
-          url: url,
-          headers: headers,
-        };
-
-        await jobs.pushUserDataToZendesk(request).runNow();
-      }
+      const request = {
+        email: email,
+        event: event,
+      };
+      await jobs.pushUserDataToZendesk(request).runNow();
     }
   }
 }
