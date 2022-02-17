@@ -11,7 +11,7 @@ export async function setupPlugin({ config, global, cache }) {
 
   global.fetchUserUrl = baseUrl + "api/v2/users";
 
-  global.defaultHeaders = {
+  global.options = {
     headers: {
       Authorization: `Basic ${global.token}`,
       "Content-Type": "application/json",
@@ -20,7 +20,7 @@ export async function setupPlugin({ config, global, cache }) {
 
   const authenticationResponse = await fetchWithRetry(
     global.baseTicketUrl,
-    global.defaultHeaders
+    global.options
   );
 
   if (!statusOk(authenticationResponse)) {
@@ -42,12 +42,12 @@ export async function setupPlugin({ config, global, cache }) {
 
 export const jobs = {
   pushUserDataToZendesk: async (request, { storage, global, cache }) => {
-    const userId = await storage.get(request.email);
+    const userId = await storage.get(request.email, null);
 
     if (userId) {
       const url = global.fetchUserUrl;
 
-      global.defaultHeaders.body = JSON.stringify({
+      global.options.body = JSON.stringify({
         user: {
           user_fields: { [request.event.event]: `${request.event.sent_at}` },
         },
@@ -55,7 +55,7 @@ export const jobs = {
 
       const result = await fetchWithRetry(
         `${url}/${userId}`,
-        global.defaultHeaders,
+        global.options,
         "PUT"
       );
     }
@@ -64,7 +64,7 @@ export const jobs = {
 async function fetchUserIdentity(requesterId, global, storage) {
   const userResult = await fetchWithRetry(
     `${global.fetchUserUrl}/${requesterId}`,
-    global.defaultHeaders
+    global.options
   );
 
   const user = await userResult.json();
@@ -80,7 +80,7 @@ async function fetchAllTickets(global, storage, cache) {
   while (allTickets.length > 0) {
     const finalUrl = `${global.baseTicketUrl}&page=${index}`;
 
-    const allTicketData = await fetchWithRetry(finalUrl, global.defaultHeaders);
+    const allTicketData = await fetchWithRetry(finalUrl, global.options);
     index += 1;
 
     allTickets = await allTicketData.json();
@@ -93,7 +93,7 @@ async function fetchAllTickets(global, storage, cache) {
     ///saves storage space
 
     for (let ticket of allTickets) {
-      const customerRecordExists = await storage.get(ticket.id);
+      const customerRecordExists = await storage.get(ticket.id, null);
 
       if (!customerRecordExists) {
         await storage.set(ticket.id, true);
