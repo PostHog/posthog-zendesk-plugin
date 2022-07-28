@@ -161,15 +161,11 @@ function statusOk(res) {
     return String(res.status)[0] === '2'
 }
 
-async function fetchWithRetry(url, options = {}, method = 'GET', isRetry = false) {
+async function fetchWithRetry(url, options = {}, method = 'GET') {
     try {
         const res = await fetch(url, { method: method, ...options })
         return res
-    } catch {
-        if (isRetry) {
-            throw new Error(`${method} request to ${url} failed.`)
-        }
-        const res = await fetchWithRetry(url, options, (method = method), (isRetry = true))
-        return res
+    } catch (e) {
+        throw new RetryError(e.toString())
     }
 }
