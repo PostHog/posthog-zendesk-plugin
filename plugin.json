@@ -1,5 +1,5 @@
 {
-    "name": "posthog-zendesk-plugin",
+    "name": "Zendesk",
     "url": "https://github.com/samcaspus/posthog-zendesk-plugin",
     "description": "This plugin can be used to integrate zendesk with posthog",
     "main": "index.js",
